@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数字炸弹游戏</title>
+    <!-- 引入Tailwind CSS 快速美化界面 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入PeerJS 实现P2P多人联机，无需自建后端 -->
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <style>
+        body {
+            background-color: #f8fafc;
+            min-height: 100vh;
+        }
+        .log-item {
+            animation: fadeIn 0.3s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-3xl mx-auto">
+        <!-- 页面标题 -->
+        <h1 class="text-3xl md:text-4xl font-bold text-center text-slate-800 mb-8">数字炸弹游戏</h1>
+
+        <!-- 身份设置弹窗 -->
+        <div id="idModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
+                <h2 class="text-xl font-bold text-slate-800 mb-4">设置你的玩家ID</h2>
+                <input 
+                    type="text" 
+                    id="playerIdInput" 
+                    placeholder="请输入你的昵称/ID"
+                    class="w-full px-4 py-3 border border-slate-300 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    maxlength="12"
+                >
+                <button 
+                    id="confirmIdBtn" 
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition"
+                >
+                    确认进入
+                </button>
+            </div>
+        </div>
+
+        <!-- 主界面 -->
+        <div id="mainContainer" class="hidden">
+            <!-- 房间操作区 -->
+            <div class="bg-white rounded-xl shadow-md p-6 mb-6">
+                <div class="flex flex-col md:flex-row gap-4 mb-4">
+                    <button 
+                        id="createRoomBtn" 
+                        class="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg transition"
+                    >
+                        创建房间
+                    </button>
+                    <div class="flex flex-1 gap-2">
+                        <input 
+                            type="text" 
+                            id="roomIdInput" 
+                            placeholder="输入房间号"
+                            class="flex-1 px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                        <button 
+                            id="joinRoomBtn" 
+                            class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-lg transition"
+                        >
+                            加入房间
+                        </button>
+                    </div>
+                </div>
+                <div id="roomInfo" class="hidden">
+                    <div class="flex justify-between items-center mb-2">
+                        <p class="text-slate-600">房间号：<span id="roomIdText" class="font-bold text-slate-800 text-xl"></span></p>
+                        <p id="roomStatus" class="text-sm px-3 py-1 rounded-full bg-yellow-100 text-yellow-800">未开始游戏</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 游戏核心区 -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <!-- 玩家列表 -->
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h3 class="text-lg font-bold text-slate-800 mb-4">玩家列表</h3>
+                    <ul id="playerList" class="space-y-2 max-h-60 overflow-y-auto">
+                        <!-- 玩家项动态生成 -->
+                    </ul>
+                </div>
+
+                <!-- 游戏状态 -->
+                <div class="bg-white rounded-xl shadow-md p-6 md:col-span-2">
+                    <h3 class="text-lg font-bold text-slate-800 mb-4">游戏状态</h3>
+                    <div class="mb-4">
+                        <p class="text-slate-600 mb-2">当前数字范围</p>
+                        <div class="flex items-center justify-center gap-4">
+                            <span id="minNum" class="text-3xl font-bold text-blue-600">0</span>
+                            <span class="text-slate-400 text-xl">~</span>
+                            <span id="maxNum" class="text-3xl font-bold text-red-600">200</span>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <p class="text-slate-600 mb-2">当前回合</p>
+                        <p id="currentTurn" class="text-xl font-semibold text-slate-800">等待游戏开始</p>
+                    </div>
+
+                    <!-- 猜数字操作区 -->
+                    <div id="gameOperate" class="mt-6">
+                        <div class="flex gap-2">
+                            <input 
+                                type="number" 
+                                id="guessInput" 
+                                placeholder="输入你猜的数字"
+                                class="flex-1 px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                min="0"
+                                max="200"
+                                disabled
+                            >
+                            <button 
+                                id="submitGuessBtn" 
+                                class="bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white font-semibold px-6 py-3 rounded-lg transition"
+                                disabled
+                            >
+                                提交猜测
+                            </button>
+                        </div>
+                        <p id="tipText" class="text-sm text-slate-500 mt-2">游戏开始后，轮到你的回合即可输入数字</p>
+                    </div>
+
+                    <!-- 房主操作按钮 -->
+                    <div id="hostOperate" class="mt-6 hidden">
+                        <button 
+                            id="startGameBtn" 
+                            class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg transition"
+                        >
+                            开始游戏
+                        </button>
+                        <button 
+                            id="restartGameBtn" 
+                            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition hidden"
+                        >
+                            重新开局
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 游戏日志区 -->
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h3 class="text-lg font-bold text-slate-800 mb-4">游戏日志</h3>
+                <div id="logContainer" class="h-48 overflow-y-auto space-y-2 p-2 bg-slate-50 rounded-lg">
+                    <p class="text-slate-500 text-center">欢迎来到数字炸弹游戏！</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 游戏结束弹窗 -->
+        <div id="gameOverModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+            <div class="bg-white rounded-xl p-8 w-full max-w-md shadow-2xl text-center">
+                <h2 class="text-2xl font-bold text-red-600 mb-4">游戏结束！</h2>
+                <p id="losePlayerText" class="text-xl text-slate-800 mb-2">玩家【XXX】猜中了炸弹数字！</p>
+                <p id="bombNumText" class="text-3xl font-bold text-slate-800 mb-6">炸弹数字是：XXX</p>
+                <button 
+                    id="closeModalBtn" 
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition"
+                >
+                    关闭
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局游戏配置
+        const CONFIG = {
+            minTotal: 0,
+            maxTotal: 200
+        };
+
+        // 全局状态
+        let playerId = '';
+        let peer = null;
+        let roomId = '';
+        let isHost = false;
+        let playerList = [];
+        let connections = {}; // 存储所有P2P连接
+        let gameStatus = 'idle'; // idle:未开始 playing:游戏中 over:游戏结束
+        let currentMin = CONFIG.minTotal;
+        let currentMax = CONFIG.maxTotal;
+        let bombNum = null;
+        let currentTurnIndex = 0;
+
+        // DOM元素
+        const idModal = document.getElementById('idModal');
+        const playerIdInput = document.getElementById('playerIdInput');
+        const confirmIdBtn = document.getElementById('confirmIdBtn');
+        const mainContainer = document.getElementById('mainContainer');
+        const createRoomBtn = document.getElementById('createRoomBtn');
+        const roomIdInput = document.getElementById('roomIdInput');
+        const joinRoomBtn = document.getElementById('joinRoomBtn');
+        const roomInfo = document.getElementById('roomInfo');
+        const roomIdText = document.getElementById('roomIdText');
+        const roomStatus = document.getElementById('roomStatus');
+        const playerListDom = document.getElementById('playerList');
+        const minNumDom = document.getElementById('minNum');
+        const maxNumDom = document.getElementById('maxNum');
+        const currentTurnDom = document.getElementById('currentTurn');
+        const guessInput = document.getElementById('guessInput');
+        const submitGuessBtn = document.getElementById('submitGuessBtn');
+        const hostOperate = document.getElementById('hostOperate');
+        const startGameBtn = document.getElementById('startGameBtn');
+        const restartGameBtn = document.getElementById('restartGameBtn');
+        const logContainer = document.getElementById('logContainer');
+        const gameOverModal = document.getElementById('gameOverModal');
+        const losePlayerText = document.getElementById('losePlayerText');
+        const bombNumText = document.getElementById('bombNumText');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+
+        // 工具函数：添加日志
+        function addLog(text, type = 'normal') {
+            const logItem = document.createElement('p');
+            logItem.className = `log-item ${type === 'system' ? 'text-blue-600' : type === 'error' ? 'text-red-600' : 'text-slate-700'}`;
+            logItem.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+            logContainer.appendChild(logItem);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        // 工具函数：更新玩家列表DOM
+        function updatePlayerList() {
+            playerListDom.innerHTML = '';
+            playerList.forEach((player, index) => {
+                const item = document.createElement('li');
+                const isMe = player.id === playerId;
+                const isHostPlayer = player.isHost;
+                const isCurrentTurn = gameStatus === 'playing' && index === currentTurnIndex;
+                item.className = `p-2 rounded-lg flex justify-between items-center ${isMe ? 'bg-blue-50 border border-blue-200' : 'bg-slate-50'}`;
+                item.innerHTML = `
+                    <span class="font-semibold ${isCurrentTurn ? 'text-red-600' : 'text-slate-800'}">
+                        ${player.name} ${isMe ? '(我)' : ''}
+                    </span>
+                    <div class="flex gap-1">
+                        ${isHostPlayer ? '<span class="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded-full">房主</span>' : ''}
+                        ${isCurrentTurn ? '<span class="text-xs px-2 py-0.5 bg-red-100 text-red-800 rounded-full">回合中</span>' : ''}
+                    </div>
+                `;
+                playerListDom.appendChild(item);
+            });
+        }
+
+        // 工具函数：广播消息给所有房间内玩家
+        function broadcastMessage(data) {
+            Object.values(connections).forEach(conn => {
+                conn.send(data);
+            });
+        }
+
+        // 工具函数：同步房间状态
+        function syncRoomState() {
+            const data = {
+                type: 'syncState',
+                data: {
+                    playerList,
+                    roomId,
+                    gameStatus,
+                    currentMin,
+                    currentMax,
+                    currentTurnIndex,
+                    isHost
+                }
+            };
+            broadcastMessage(data);
+        }
+
+        // 初始化Peer连接
+        function initPeer() {
+            peer = new Peer();
+            peer.on('open', (id) => {
+                addLog(`系统：连接成功，你的ID为${id}`, 'system');
+            });
+
+            // 监听其他玩家的连接请求（房主用）
+            peer.on('connection', (conn) => {
+                if (!isHost) return; // 非房主拒绝连接
+
+                conn.on('open', () => {
+                    // 收到玩家加入请求
+                    conn.on('data', (data) => {
+                        if (data.type === 'joinRoom') {
+                            const newPlayer = {
+                                id: conn.peer,
+                                name: data.data.playerName,
+                                isHost: false
+                            };
+                            // 检查玩家是否已存在
+                            const existIndex = playerList.findIndex(p => p.id === newPlayer.id);
+                            if (existIndex === -1) {
+                                playerList.push(newPlayer);
+                                connections[conn.peer] = conn;
+                                addLog(`系统：玩家【${newPlayer.name}】加入房间`, 'system');
+                            }
+                            // 同步最新房间状态给所有玩家
+                            syncRoomState();
+                        }
+                    });
+                });
+
+                // 玩家断开连接
+                conn.on('close', () => {
+                    const leavePlayer = playerList.find(p => p.id === conn.peer);
+                    if (leavePlayer) {
+                        playerList = playerList.filter(p => p.id !== conn.peer);
+                        delete connections[conn.peer];
+                        addLog(`系统：玩家【${leavePlayer.name}】离开房间`, 'system');
+                        // 如果房主离开，转让房主
+                        if (leavePlayer.isHost && playerList.length > 0) {
+                            playerList[0].isHost = true;
+                            isHost = playerList[0].id === playerId;
+                            addLog(`系统：房主已离开，【${playerList[0].name}】成为新房主`, 'system');
+                        }
+                        syncRoomState();
+                    }
+                });
+
+                conn.on('error', (err) => {
+                    console.error('连接错误', err);
+                });
+            });
+
+            peer.on('error', (err) => {
+                addLog(`系统：连接出错 - ${err.message}`, 'error');
+                alert(`连接出错：${err.message}`);
+            });
+        }
+
+        // 处理收到的同步消息
+        function handleSyncState(data) {
+            playerList = data.playerList;
+            roomId = data.roomId;
+            gameStatus = data.gameStatus;
+            currentMin = data.currentMin;
+            currentMax = data.currentMax;
+            currentTurnIndex = data.currentTurnIndex;
+            isHost = data.isHost;
+
+            // 更新DOM
+            roomIdText.textContent = roomId;
+            minNumDom.textContent = currentMin;
+            maxNumDom.textContent = currentMax;
+            updatePlayerList();
+
+            // 更新房间状态
+            if (gameStatus === 'idle') {
+                roomStatus.textContent = '未开始游戏';
+                roomStatus.className = 'text-sm px-3 py-1 rounded-full bg-yellow-100 text-yellow-800';
+                currentTurnDom.textContent = '等待游戏开始';
+                guessInput.disabled = true;
+                submitGuessBtn.disabled = true;
+            } else if (gameStatus === 'playing') {
+                roomStatus.textContent = '游戏进行中';
+                roomStatus.className = 'text-sm px-3 py-1 rounded-full bg-green-100 text-green-800';
+                const currentPlayer = playerList[currentTurnIndex];
+                currentTurnDom.textContent = currentPlayer ? `【${currentPlayer.name}】的回合` : '等待玩家';
+                // 判断是否是自己的回合
+                const isMyTurn = currentPlayer && currentPlayer.id === playerId;
+                guessInput.disabled = !isMyTurn;
+                submitGuessBtn.disabled = !isMyTurn;
+                guessInput.min = currentMin;
+                guessInput.max = currentMax;
+            } else if (gameStatus === 'over') {
+                roomStatus.textContent = '游戏已结束';
+                roomStatus.className = 'text-sm px-3 py-1 rounded-full bg-red-100 text-red-800';
+                currentTurnDom.textContent = '游戏已结束';
+                guessInput.disabled = true;
+                submitGuessBtn.disabled = true;
+            }
+
+            // 房主操作区显示
+            if (isHost) {
+                hostOperate.classList.remove('hidden');
+                if (gameStatus === 'idle' || gameStatus === 'over') {
+                    startGameBtn.classList.remove('hidden');
+                    restartGameBtn.classList.add('hidden');
+                } else {
+                    startGameBtn.classList.add('hidden');
+                    restartGameBtn.classList.remove('hidden');
+                }
+            } else {
+                hostOperate.classList.add('hidden');
+            }
+
+            // 房间信息显示
+            roomInfo.classList.remove('hidden');
+        }
+
+        // 事件监听：确认玩家ID
+        confirmIdBtn.addEventListener('click', () => {
+            const name = playerIdInput.value.trim();
+            if (!name) {
+                alert('请输入有效的玩家ID');
+                return;
+            }
+            playerId = name;
+            idModal.classList.add('hidden');
+            mainContainer.classList.remove('hidden');
+            initPeer();
+            addLog(`系统：你已以【${playerId}】的身份进入游戏`, 'system');
+        });
+
+        // 事件监听：创建房间
+        createRoomBtn.addEventListener('click', () => {
+            if (roomId) {
+                alert('你已经在房间中了');
+                return;
+            }
+            isHost = true;
+            roomId = Math.random().toString(36).substring(2, 6).toUpperCase(); // 生成4位随机房间号
+            playerList = [
+                {
+                    id: peer.id,
+                    name: playerId,
+                    isHost: true
+                }
+            ];
+            addLog(`系统：你创建了房间，房间号：${roomId}`, 'system');
+            handleSyncState({
+                playerList,
+                roomId,
+                gameStatus: 'idle',
+                currentMin: CONFIG.minTotal,
+                currentMax: CONFIG.maxTotal,
+                currentTurnIndex: 0,
+                isHost: true
+            });
+        });
+
+        // 事件监听：加入房间
+        joinRoomBtn.addEventListener('click', () => {
+            const targetRoomId = roomIdInput.value.trim().toUpperCase();
+            if (!targetRoomId) {
+                alert('请输入有效的房间号');
+                return;
+            }
+            if (roomId) {
+                alert('你已经在房间中了');
+                return;
+            }
+            // 连接房主
+            const conn = peer.connect(targetRoomId);
+            conn.on('open', () => {
+                // 发送加入请求
+                conn.send({
+                    type: 'joinRoom',
+                    data: {
+                        playerName: playerId
+                    }
+                });
+                // 监听房主的同步消息
+                conn.on('data', (data) => {
+                    if (data.type === 'syncState') {
+                        handleSyncState(data.data);
+                    } else if (data.type === 'gameOver') {
+                        // 游戏结束
+                        gameStatus = 'over';
+                        handleSyncState({
+                            ...data.data,
+                            isHost: false
+                        });
+                        // 显示结束弹窗
+                        losePlayerText.textContent = `玩家【${data.data.losePlayerName}】猜中了炸弹数字！`;
+                        bombNumText.textContent = `炸弹数字是：${data.data.bombNum}`;
+                        gameOverModal.classList.remove('hidden');
+                        addLog(`系统：游戏结束！玩家【${data.data.losePlayerName}】猜中了炸弹数字${data.data.bombNum}`, 'error');
+                    } else if (data.type === 'addLog') {
+                        addLog(data.data.text, data.data.type);
+                    }
+                });
+                connections[targetRoomId] = conn;
+                roomId = targetRoomId;
+            });
+
+            conn.on('error', (err) => {
+                alert('加入房间失败，请检查房间号是否正确');
+                console.error(err);
+            });
+
+            conn.on('close', () => {
+                addLog('系统：与房间的连接已断开', 'error');
+                // 重置状态
+                roomId = '';
+                isHost = false;
+                playerList = [];
+                connections = {};
+                gameStatus = 'idle';
+                currentMin = CONFIG.minTotal;
+                currentMax = CONFIG.maxTotal;
+                bombNum = null;
+                currentTurnIndex = 0;
+                roomInfo.classList.add('hidden');
+                hostOperate.classList.add('hidden');
+                updatePlayerList();
+            });
+        });
+
+        // 事件监听：开始游戏
+        startGameBtn.addEventListener('click', () => {
+            if (playerList.length < 1) {
+                alert('至少需要1名玩家才能开始游戏');
+                return;
+            }
+            // 生成炸弹数字
+            bombNum = Math.floor(Math.random() * (CONFIG.maxTotal - CONFIG.minTotal + 1)) + CONFIG.minTotal;
+            gameStatus = 'playing';
+            currentMin = CONFIG.minTotal;
+            currentMax = CONFIG.maxTotal;
+            currentTurnIndex = 0;
+            addLog('系统：游戏开始！炸弹数字已生成', 'system');
+            addLog(`系统：当前数字范围 ${currentMin} ~ ${currentMax}`, 'system');
+            addLog(`系统：轮到【${playerList[currentTurnIndex].name}】的回合`, 'system');
+            // 同步状态
+            syncRoomState();
+            // 广播日志
+            broadcastMessage({
+                type: 'addLog',
+                data: { text: '系统：游戏开始！炸弹数字已生成', type: 'system' }
+            });
+            broadcastMessage({
+                type: 'addLog',
+                data: { text: `系统：当前数字范围 ${currentMin} ~ ${currentMax}`, type: 'system' }
+            });
+            broadcastMessage({
+                type: 'addLog',
+                data: { text: `系统：轮到【${playerList[currentTurnIndex].name}】的回合`, type: 'system' }
+            });
+        });
+
+        // 事件监听：提交猜测
+        submitGuessBtn.addEventListener('click', () => {
+            const guessNum = parseInt(guessInput.value);
+            // 验证数字合法性
+            if (isNaN(guessNum) || guessNum < currentMin || guessNum > currentMax) {
+                alert(`请输入 ${currentMin} ~ ${currentMax} 之间的有效数字`);
+                return;
+            }
+            // 房主处理逻辑
+            if (isHost) {
+                if (guessNum === bombNum) {
+                    // 猜中炸弹，游戏结束
+                    const losePlayer = playerList[currentTurnIndex];
+                    gameStatus = 'over';
+                    addLog(`玩家【${losePlayer.name}】猜了数字 ${guessNum}，猜中了炸弹！`, 'error');
+                    // 同步状态
+                    syncRoomState();
+                    // 广播游戏结束
+                    broadcastMessage({
+                        type: 'gameOver',
+                        data: {
+                            playerList,
+                            roomId,
+                            gameStatus: 'over',
+                            currentMin,
+                            currentMax,
+                            currentTurnIndex,
+                            losePlayerName: losePlayer.name,
+                            bombNum: bombNum
+                        }
+                    });
+                    // 显示结束弹窗
+                    losePlayerText.textContent = `玩家【${losePlayer.name}】猜中了炸弹数字！`;
+                    bombNumText.textContent = `炸弹数字是：${bombNum}`;
+                    gameOverModal.classList.remove('hidden');
+                    return;
+                } else {
+                    // 没猜中，更新范围
+                    if (guessNum < bombNum) {
+                        currentMin = guessNum + 1;
+                    } else {
+                        currentMax = guessNum - 1;
+                    }
+                    addLog(`玩家【${playerList[currentTurnIndex].name}】猜了数字 ${guessNum}，安全！`, 'normal');
+                    addLog(`系统：当前数字范围更新为 ${currentMin} ~ ${currentMax}`, 'system');
+                    // 切换回合
+                    currentTurnIndex = (currentTurnIndex + 1) % playerList.length;
+                    addLog(`系统：轮到【${playerList[currentTurnIndex].name}】的回合`, 'system');
+                    // 同步状态
+                    syncRoomState();
+                    // 广播日志
+                    broadcastMessage({
+                        type: 'addLog',
+                        data: { text: `玩家【${playerList[(currentTurnIndex - 1 + playerList.length) % playerList.length].name}】猜了数字 ${guessNum}，安全！`, type: 'normal' }
+                    });
+                    broadcastMessage({
+                        type: 'addLog',
+                        data: { text: `系统：当前数字范围更新为 ${currentMin} ~ ${currentMax}`, type: 'system' }
+                    });
+                    broadcastMessage({
+                        type: 'addLog',
+                        data: { text: `系统：轮到【${playerList[currentTurnIndex].name}】的回合`, type: 'system' }
+                    });
+                }
+            } else {
+                // 非房主，把猜测提交给房主处理
+                const conn = connections[roomId];
+                if (conn) {
+                    conn.send({
+                        type: 'submitGuess',
+                        data: {
+                            playerId: peer.id,
+                            playerName: playerId,
+                            guessNum: guessNum
+                        }
+                    });
+                }
+            }
+            // 清空输入框
+            guessInput.value = '';
+        });
+
+        // 事件监听：房主收到其他玩家的猜测
+        peer.on('connection', (conn) => {
+            conn.on('data', (data) => {
+                if (data.type === 'submitGuess' && isHost && gameStatus === 'playing') {
+                    const { guessNum, playerName } = data.data;
+                    const currentPlayer = playerList[currentTurnIndex];
+                    // 验证是否是当前回合的玩家
+                    if (currentPlayer.name !== playerName) return;
+                    // 触发和房主自己猜数字一样的逻辑
+                    guessInput.value = guessNum;
+                    submitGuessBtn.click();
+                }
+            });
+        });
+
+        // 事件监听：重新开局
+        restartGameBtn.addEventListener('click', () => {
+            startGameBtn.click();
+        });
+
+        // 事件监听：关闭结束弹窗
+        closeModalBtn.addEventListener('click', () => {
+            gameOverModal.classList.add('hidden');
+        });
+
+        // 回车提交
+        playerIdInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') confirmIdBtn.click();
+        });
+        roomIdInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') joinRoomBtn.click();
+        });
+        guessInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !submitGuessBtn.disabled) submitGuessBtn.click();
+        });
+    </script>
+</body>
+</html>
